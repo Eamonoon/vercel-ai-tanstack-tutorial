@@ -1,0 +1,47 @@
+site_name: Vercel AI SDK + TanStack AI 中文教程
+site_url: https://eamonoon.github.io/vercel-ai-tanstack-tutorial/
+site_description: 从入门到企业级 Agent 的完整中文教程
+repo_url: https://github.com/Eamonoon/vercel-ai-tanstack-tutorial
+repo_name: Eamonoon/vercel-ai-tanstack-tutorial
+
+theme:
+  name: material
+  language: zh
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    primary: indigo
+    accent: indigo
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+extra:
+  search:
+    language: zh
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - toc:
+      permalink: true
+
+nav:
+  - 🏠 首页: index.md
+  - 📦 第1章 环境搭建: chapters/01-environment/README.md
+  - ⚡ 第2章 Vercel AI SDK 基础: chapters/02-vercel-ai-sdk-basics/README.md
+  - 🚀 第3章 Vercel AI SDK 进阶: chapters/03-vercel-ai-sdk-advanced/README.md
+  - 🧩 第4章 高级应用模式: chapters/04-vercel-ai-sdk-advanced-patterns/README.md
+  - 🏭 第5章 生产就绪实践: chapters/05-vercel-ai-sdk-production/README.md
+  - 🏪 第6章 企业实战(一): chapters/06-enterprise-case-1/README.md
+  - 🏗️ 第7章 企业实战(二): chapters/07-enterprise-case-2/README.md
