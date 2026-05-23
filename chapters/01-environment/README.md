@@ -2,19 +2,19 @@
 
 ## 1.1 概述
 
-本章将带你从零搭建一个基于 **Next.js + TypeScript** 的 AI 应用开发环境，并集成 **Vercel AI SDK**，同时配置 **OpenAI** 和 **Anthropic** 双 Provider。
+本章将从零搭建基于 **Next.js + TypeScript** 的 AI 应用开发环境，集成 **Vercel AI SDK**，并配置 **OpenAI** 和 **Anthropic** 双 Provider。
 
 ### 学习目标
 
 - 掌握 Next.js 项目创建与 TypeScript 配置
-- 理解 Vercel AI SDK 的作用与架构
+- 理解 Vercel AI SDK 的作用与架构层次
 - 学会配置 OpenAI + Anthropic 双 Provider
 - 掌握环境变量管理与安全实践
 - 能够编写第一条 AI API 调用
 
 ### 前置知识
 
-- 熟悉 JavaScript/TypeScript 基本语法
+- 熟悉 JavaScript / TypeScript 基本语法
 - 了解 Node.js 基础概念
 - 拥有 OpenAI 或 Anthropic 的 API Key
 
@@ -24,15 +24,17 @@
 
 ### Next.js
 
-Next.js 是一个 React 全栈框架，提供服务端渲染、API Routes、文件路由等能力。在 AI 应用中，我们利用它的 **API Routes** 安全地调用 AI 服务（API Key 不暴露给前端）。
+Next.js 是一个 React 全栈框架，提供服务端渲染、API Routes、文件系统路由等能力。在 AI 应用中，我们利用它的 **API Routes** 安全地调用 AI 服务——API Key 不会暴露给前端浏览器。
 
 ### Vercel AI SDK
 
-Vercel AI SDK (`ai`) 是一个统一的 AI 开发工具包，提供：
+Vercel AI SDK（`ai`）是一个统一的 AI 开发工具包，核心能力包括：
 
-- **Streaming 支持**：原生支持文字流式输出
-- **Provider 抽象**：通过统一接口切换不同 AI 服务
-- **React Hooks**：`useChat`、`useCompletion` 等开箱即用
+- **Streaming 支持**：原生支持文字流式输出，实现打字机效果
+- **Provider 抽象**：通过统一接口切换不同 AI 服务，业务代码无需修改
+- **React Hooks**：`useChat`、`useCompletion` 等开箱即用的前端 Hook
+- **工具调用**：让模型能够调用外部函数（API、数据库等）
+- **结构化输出**：强制模型输出符合 JSON Schema 的数据
 
 ### Provider 模式
 
@@ -40,11 +42,11 @@ Vercel AI SDK (`ai`) 是一个统一的 AI 开发工具包，提供：
 你的代码 → Vercel AI SDK → Provider (OpenAI/Anthropic) → LLM
 ```
 
-Provider 是 SDK 与具体 AI 服务之间的适配层。切换 Provider 只需要修改一行代码，业务逻辑完全不变。
+Provider 是 SDK 与具体 AI 服务之间的适配层。每个 Provider 封装了一个 AI 服务商的 API 差异。切换 Provider 只需要修改一行代码，业务逻辑完全不变。
 
 ### TypeScript
 
-TypeScript 为 AI 应用提供类型安全，特别是在处理 AI 返回的复杂数据结构时，能大幅减少运行时错误。
+TypeScript 为 AI 应用提供类型安全。AI SDK 本身完全用 TypeScript 编写，所有 API 都有完整的类型定义。在处理 AI 返回的复杂数据结构时，类型系统能大幅减少运行时错误。
 
 ---
 
@@ -102,7 +104,7 @@ npm install ai
 npm install @ai-sdk/openai
 npm install @ai-sdk/anthropic
 
-# 安装 Zod（用于结构化输出校验）
+# 安装 Zod（用于结构化输出和环境变量校验）
 npm install zod
 ```
 
@@ -157,7 +159,7 @@ DEFAULT_PROVIDER=openai
 
 ### 1.5.3 TypeScript 类型声明
 
-创建 `src/env.ts` 提供类型安全的环境变量读取：
+创建 `src/env.ts`，通过 Zod 对环境变量做运行时校验：
 
 ```typescript
 import { z } from "zod";
@@ -269,7 +271,7 @@ export async function POST(request: NextRequest) {
 
 ### 1.7.2 流式 API Route
 
-创建 `src/app/api/chat/stream/route.ts`——支持流式输出：
+创建 `src/app/api/chat/stream/route.ts`：
 
 ```typescript
 import { NextRequest } from "next/server";
@@ -401,23 +403,23 @@ npm run dev
 
 ### 1.8.3 切换 Provider 验证
 
-用同一个问题分别在 OpenAI 和 Anthropic 下测试，观察返回结果风格差异。无需改代码，只需在下拉菜单中切换。
+用同一个问题分别在 OpenAI 和 Anthropic 下测试，观察返回结果的风格差异。无需修改代码，只需在下拉菜单中切换 Provider 即可。
 
 ### 1.8.4 流式测试
 
-你也可以用 curl 测试流式接口：
+也可以用 curl 测试流式接口：
 
 ```bash
 curl -X POST http://localhost:3000/api/chat/stream \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Count from 1 to 5"}],"provider":"openai"}'
+  -d '{"messages":[{"role":"user","content":"从1数到5"}],"provider":"openai"}'
 ```
 
 ---
 
 ## 1.9 项目目录结构
 
-初始化完成后，项目结构如下：
+初始化完成后的项目结构如下：
 
 ```
 ai-tutorial/
@@ -429,27 +431,27 @@ ai-tutorial/
 ├── tailwind.config.ts
 ├── postcss.config.js
 ├── src/
-│   ├── env.ts                 # 环境变量类型声明
+│   ├── env.ts                 # 环境变量类型声明与校验
 │   ├── app/
 │   │   ├── page.tsx           # 测试页面
 │   │   ├── globals.css
 │   │   ├── layout.tsx
 │   │   └── api/
 │   │       └── chat/
-│   │           ├── route.ts         # 普通 API
+│   │           ├── route.ts         # 非流式 API
 │   │           └── stream/
 │   │               └── route.ts     # 流式 API
 │   └── lib/
 │       └── ai/
 │           ├── index.ts             # 统一导出
-│           └── provider.ts          # Provider 配置
+│           └── provider.ts          # Provider 工厂配置
 ```
 
 ---
 
 ## 1.10 常见问题
 
-### Q1: `OPENAI_API_KEY` 未设置错误
+### Q1: `OPENAI_API_KEY` 未设置
 
 ```
 Error: OPENAI_API_KEY is required
@@ -459,15 +461,15 @@ Error: OPENAI_API_KEY is required
 
 ### Q2: CORS 错误
 
-**解决**：Next.js API Routes 默认同域访问。如果是开发环境，确保前端也运行在 `localhost:3000`。生产环境需要配置 CORS 中间件。
+**解决**：Next.js API Routes 默认同域访问。开发环境下确保前端也运行在 `localhost:3000`。生产环境需配置 CORS 中间件。
 
 ### Q3: Provider 切换不生效
 
 **解决**：检查 `DEFAULT_PROVIDER` 环境变量是否拼写正确（全小写 `openai` 或 `anthropic`）。也可以在请求体中显式指定 `provider` 字段。
 
-### Q4: `zod` 校验失败
+### Q4: Zod 校验失败
 
-**解决**：`src/env.ts` 中的 `envSchema.parse()` 会在启动时校验环境变量。确保所有必填变量均已配置。缺失特定 Provider 时，可以放宽校验规则。
+**解决**：`src/env.ts` 中的 `envSchema.parse()` 会在服务器启动时校验所有环境变量。确保所有必填变量均已配置。如果暂时只用一个 Provider，可以放宽校验规则（例如将 `ANTHROPIC_API_KEY` 改为可选）。
 
 ### Q5: 安装 `ai` 时版本冲突
 
@@ -479,7 +481,7 @@ npm install ai@latest --legacy-peer-deps
 
 ### Q6: 流式响应在浏览器中不显示
 
-**解决**：确认使用 `result.toDataStreamResponse()` 而非 `NextResponse.json()`。前端需使用 `ReadableStream` 或 `EventSource` 消费流式响应。
+**解决**：确认服务端使用了 `result.toDataStreamResponse()` 而非 `NextResponse.json()`。前端需要使用 `useChat` Hook 或手动处理 `ReadableStream`。
 
 ---
 
@@ -490,9 +492,9 @@ npm install ai@latest --legacy-peer-deps
 - ✅ Next.js + TypeScript 项目脚手架搭建
 - ✅ Vercel AI SDK 安装与配置
 - ✅ OpenAI + Anthropic 双 Provider 配置
-- ✅ 环境变量管理与类型安全
+- ✅ 环境变量管理与类型安全校验
 - ✅ 非流式 + 流式 API Route
 - ✅ 前端测试页面
 - ✅ 运行验证与 Provider 切换测试
 
-下一章将深入 Vercel AI SDK 的核心概念与高级用法。
+下一章将深入 AI SDK 的**核心架构**，理解 Provider 的工作原理与高级配置方法。
