@@ -44,11 +44,11 @@ nav:
   - 📘 基础篇:
     - 第1章 环境搭建与项目初始化: chapters/01-environment/README.md
     - 第2章 AI SDK 核心架构与 Provider 配置: chapters/02-ai-sdk-architecture/README.md
-    - 第3章 文本生成: generateText 深入: chapters/03-generate-text/README.md
+    - '第3章 文本生成: generateText 深入': chapters/03-generate-text/README.md
     - 第4章 流式输出与前端集成: chapters/04-streaming-chat/README.md
   - 📗 进阶篇:
     - 第5章 工具调用（Tool Calling）实战: chapters/05-tool-calling/README.md
-    - 第6章 结构化输出: generateObject: chapters/06-structured-output/README.md
+    - '第6章 结构化输出: generateObject': chapters/06-structured-output/README.md
     - 第7章 Embedding 与语义搜索: chapters/07-embedding/README.md
     - 第8章 Agent 模式与多步推理: chapters/08-agent-patterns/README.md
   - 📙 高级篇:
