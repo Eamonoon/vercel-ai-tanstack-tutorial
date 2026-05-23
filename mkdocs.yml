@@ -42,27 +42,27 @@ markdown_extensions:
 nav:
   - 🏠 首页: index.md
   - 📘 基础篇:
-    - 第1章 环境搭建与项目初始化: chapters/01-environment/README.md
-    - 第2章 AI SDK 核心架构与 Provider 配置: chapters/02-ai-sdk-architecture/README.md
-    - '第3章 文本生成: generateText 深入': chapters/03-generate-text/README.md
-    - 第4章 流式输出与前端集成: chapters/04-streaming-chat/README.md
+    - 第1章 环境搭建与项目初始化: chapters/01-environment/index.md
+    - 第2章 AI SDK 核心架构与 Provider 配置: chapters/02-ai-sdk-architecture/index.md
+    - '第3章 文本生成: generateText 深入': chapters/03-generate-text/index.md
+    - 第4章 流式输出与前端集成: chapters/04-streaming-chat/index.md
   - 📗 进阶篇:
-    - 第5章 工具调用（Tool Calling）实战: chapters/05-tool-calling/README.md
-    - '第6章 结构化输出: generateObject': chapters/06-structured-output/README.md
-    - 第7章 Embedding 与语义搜索: chapters/07-embedding/README.md
-    - 第8章 Agent 模式与多步推理: chapters/08-agent-patterns/README.md
+    - 第5章 工具调用（Tool Calling）实战: chapters/05-tool-calling/index.md
+    - '第6章 结构化输出: generateObject': chapters/06-structured-output/index.md
+    - 第7章 Embedding 与语义搜索: chapters/07-embedding/index.md
+    - 第8章 Agent 模式与多步推理: chapters/08-agent-patterns/index.md
   - 📙 高级篇:
-    - 第9章 RAG 检索增强生成: chapters/09-rag/README.md
-    - 第10章 多模态与流式中间件: chapters/10-multimodal-stream/README.md
-    - 第11章 链式编排与并行调用: chapters/11-chain-parallel/README.md
-    - 第12章 自定义 Provider 与可观测性: chapters/12-custom-provider/README.md
+    - 第9章 RAG 检索增强生成: chapters/09-rag/index.md
+    - 第10章 多模态与流式中间件: chapters/10-multimodal-stream/index.md
+    - 第11章 链式编排与并行调用: chapters/11-chain-parallel/index.md
+    - 第12章 自定义 Provider 与可观测性: chapters/12-custom-provider/index.md
   - 📕 生产实践篇:
-    - 第13章 安全计算与内容合规: chapters/13-security-compliance/README.md
-    - 第14章 Multi-Agent 协作架构: chapters/14-multi-agent/README.md
-    - 第15章 生产级错误处理与高可用: chapters/15-error-handling/README.md
+    - 第13章 安全计算与内容合规: chapters/13-security-compliance/index.md
+    - 第14章 Multi-Agent 协作架构: chapters/14-multi-agent/index.md
+    - 第15章 生产级错误处理与高可用: chapters/15-error-handling/index.md
   - 📚 企业实战篇:
-    - 第16章 AI 智能客服系统: chapters/16-enterprise-case-1/README.md
-    - 第17章 AI 内容生成平台: chapters/17-enterprise-case-2/README.md
+    - 第16章 AI 智能客服系统: chapters/16-enterprise-case-1/index.md
+    - 第17章 AI 内容生成平台: chapters/17-enterprise-case-2/index.md
   - 📋 附录:
     - 附录A 常见问题与排障: appendix-a.md
     - 附录B 技术栈对比与选型: appendix-b.md
