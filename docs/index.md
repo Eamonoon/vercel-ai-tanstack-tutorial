@@ -61,7 +61,7 @@
 
 ```bash
 git clone https://github.com/Eamonoon/vercel-ai-tanstack-tutorial.git
-cd vercel-ai-tanstack-tutorial/chapters/01-environment
+cd vercel-ai-tanstack-tutorial/docs/chapters/01-environment
 cp .env.example .env.local
 # 编辑 .env.local 填入 API Key
 npm install && npm run dev
