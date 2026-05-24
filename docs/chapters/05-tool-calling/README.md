@@ -70,7 +70,7 @@ execute: async ({ city, units }) => {
 
 ```typescript
 const result = streamText({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   messages,
   tools: { tool1, tool2 },
   maxSteps: 5, // 最多允许 5 轮工具调用
@@ -111,7 +111,7 @@ execute: async ({ city }) => {
 
 ```typescript
 execute: async ({ city }) => {
-  const mockDb: Record<string, any> = {
+    const mockDb: Record<string, { temperature: number; condition: string; humidity: number }> = {
     '北京': { temperature: 22, condition: '晴', humidity: 45 },
     '上海': { temperature: 28, condition: '多云', humidity: 70 },
   }
@@ -125,11 +125,11 @@ execute: async ({ city }) => {
 
 本示例展示一个带流式输出的天气查询工具。用户输入城市名，模型自动调用天气工具获取数据并生成回答。
 
-`app/api/weather/route.ts`：
+`src/app/api/weather/route.ts`：
 
 ```typescript
 import { streamText, tool } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const weatherTool = tool({
@@ -159,21 +159,32 @@ const weatherTool = tool({
   },
 })
 
+if (!process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
+  throw new Error('请设置 OPENAI_API_KEY 或 ANTHROPIC_API_KEY 环境变量')
+}
+
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  try {
+    const { messages } = await req.json()
 
-  const result = streamText({
-    model: openai('gpt-4o'),
-    messages,
-    tools: { get_weather: weatherTool },
-    maxSteps: 5,
-  })
+    const result = streamText({
+      model: getModel(provider),
+      messages,
+      tools: { get_weather: weatherTool },
+      maxSteps: 5,
+    })
 
-  return result.toDataStreamResponse()
+    return result.toDataStreamResponse()
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 }
 ```
 
-`app/weather/page.tsx`：
+`src/app/weather/page.tsx`：
 
 ```tsx
 'use client'
@@ -186,7 +197,7 @@ export default function WeatherPage() {
   })
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">🌤 天气查询助手</h1>
       <p className="text-gray-500 mb-4">输入城市名，查询实时天气信息</p>
 
@@ -239,11 +250,11 @@ export default function WeatherPage() {
 
 本示例模拟一个查询用户订单信息的数据库工具。
 
-`app/api/order-query/route.ts`：
+`src/app/api/order-query/route.ts`：
 
 ```typescript
 import { streamText, tool } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const orderDb = [
@@ -282,23 +293,30 @@ const queryUserTool = tool({
 })
 
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  try {
+    const { messages } = await req.json()
 
-  const result = streamText({
-    model: openai('gpt-4o'),
-    messages,
-    tools: {
-      query_orders: queryOrderTool,
-      query_user: queryUserTool,
-    },
-    maxSteps: 5,
-  })
+    const result = streamText({
+      model: getModel(provider),
+      messages,
+      tools: {
+        query_orders: queryOrderTool,
+        query_user: queryUserTool,
+      },
+      maxSteps: 5,
+    })
 
-  return result.toDataStreamResponse()
+    return result.toDataStreamResponse()
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 }
 ```
 
-`app/order-query/page.tsx`：
+`src/app/order-query/page.tsx`：
 
 ```tsx
 'use client'
@@ -311,7 +329,7 @@ export default function OrderQueryPage() {
   })
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">📦 订单查询助手</h1>
       <p className="text-gray-500 mb-4">查询用户信息和订单记录</p>
 
@@ -365,11 +383,11 @@ export default function OrderQueryPage() {
 
 本示例展示多个工具协同工作：一个工具查询天气，另一个进行语义搜索。
 
-`app/api/multi-tools/route.ts`：
+`src/app/api/multi-tools/route.ts`：
 
 ```typescript
 import { streamText, tool } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const weatherTool = tool({
@@ -378,7 +396,7 @@ const weatherTool = tool({
     city: z.string().describe('城市名称'),
   }),
   execute: async ({ city }) => {
-    const db: Record<string, any> = {
+    const db: Record<string, { temperature: number; condition: string }> = {
       '北京': { temperature: 22, condition: '晴' },
       '上海': { temperature: 28, condition: '多云' },
       '杭州': { temperature: 25, condition: '阴' },
@@ -412,23 +430,30 @@ const searchTool = tool({
 })
 
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  try {
+    const { messages } = await req.json()
 
-  const result = streamText({
-    model: openai('gpt-4o'),
-    messages,
-    tools: {
-      get_weather: weatherTool,
-      search_knowledge: searchTool,
-    },
-    maxSteps: 5,
-  })
+    const result = streamText({
+      model: getModel(provider),
+      messages,
+      tools: {
+        get_weather: weatherTool,
+        search_knowledge: searchTool,
+      },
+      maxSteps: 5,
+    })
 
-  return result.toDataStreamResponse()
+    return result.toDataStreamResponse()
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 }
 ```
 
-`app/multi-tools/page.tsx`：
+`src/app/multi-tools/page.tsx`：
 
 ```tsx
 'use client'
@@ -441,7 +466,7 @@ export default function MultiToolsPage() {
   })
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">🛠 多工具助手</h1>
       <p className="text-gray-500 mb-4">
         我可以查天气、回答问题，试试说"北京天气怎么样？"或"什么是 Vercel AI SDK？"
@@ -495,11 +520,11 @@ export default function MultiToolsPage() {
 
 工具执行可能失败（网络错误、无效参数、数据不存在）。本示例展示如何让工具优雅处理错误，并让模型根据错误信息做出合理回应。
 
-`app/api/tool-with-errors/route.ts`：
+`src/app/api/tool-with-errors/route.ts`：
 
 ```typescript
 import { streamText, tool } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const inventoryDb: Record<string, { name: string; price: number; stock: number; category: string }> = {
@@ -558,23 +583,30 @@ const calculateShipping = tool({
 })
 
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  try {
+    const { messages } = await req.json()
 
-  const result = streamText({
-    model: openai('gpt-4o'),
-    messages,
-    tools: {
-      query_inventory: queryInventory,
-      calculate_shipping: calculateShipping,
-    },
-    maxSteps: 5,
-  })
+    const result = streamText({
+      model: getModel(provider),
+      messages,
+      tools: {
+        query_inventory: queryInventory,
+        calculate_shipping: calculateShipping,
+      },
+      maxSteps: 5,
+    })
 
-  return result.toDataStreamResponse()
+    return result.toDataStreamResponse()
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 }
 ```
 
-`app/tool-with-errors/page.tsx`：
+`src/app/tool-with-errors/page.tsx`：
 
 ```tsx
 'use client'
@@ -587,7 +619,7 @@ export default function ToolWithErrorsPage() {
   })
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">🏪 智能库存查询</h1>
       <p className="text-gray-500 mb-4">查询商品库存和运费，支持错误恢复</p>
 
@@ -688,7 +720,7 @@ curl -X POST http://localhost:3000/api/tool-with-errors \
 
 ```typescript
 const result = streamText({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   messages,
   tools: { ... },
   maxSteps: 5,

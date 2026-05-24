@@ -44,7 +44,7 @@ AI SDK 的 Agent 循环是自动化的"思考-行动-观察"过程：
 
 ```typescript
 const result = streamText({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   messages,
   tools: { search, calculate },
   maxSteps: 5, // 最多 5 轮 Agent 循环
@@ -79,14 +79,15 @@ const result = streamText({
 
 ```typescript
 const result = streamText({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   messages,
   tools: { ... },
   maxSteps: 5,
 })
 
 // 读取最终消耗
-const { usage } = await result.text
+const text = await result.text
+const { usage } = await result
 console.log('总 Token 消耗:', {
   prompt: usage.promptTokens,
   completion: usage.completionTokens,
@@ -112,7 +113,7 @@ const MAX_STEPS = 10
 
 // 或使用 onFinish 检查消耗
 const result = streamText({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   messages,
   tools: { ... },
   maxSteps: MAX_STEPS,
@@ -171,11 +172,11 @@ function createAgentTools(context: AgentContext) {
 
 一个基础的 Agent，配备搜索工具，可以自主决定何时调用。
 
-`app/api/simple-agent/route.ts`：
+`src/app/api/simple-agent/route.ts`：
 
 ```typescript
 import { streamText, tool } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const searchTool = tool({
@@ -203,26 +204,34 @@ const searchTool = tool({
 })
 
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  try {
+    const { messages } = await req.json()
 
-  const result = streamText({
-    model: openai('gpt-4o'),
-    messages: [
-      {
-        role: 'system',
-        content: '你是一个技术问答 Agent。当用户问技术问题时，如果需要最新或更详细的信息，使用搜索工具查询知识库。基于查询结果回答。',
-      },
-      ...messages,
-    ],
-    tools: { search: searchTool },
-    maxSteps: 5,
-  })
+    const result = streamText({
+      model: getModel(provider),
+      messages: [
+        {
+          role: 'system',
+          content: '你是一个技术问答 Agent。当用户问技术问题时，如果需要最新或更详细的信息，使用搜索工具查询知识库。基于查询结果回答。',
+        },
+        ...messages,
+      ],
+      tools: { search: searchTool },
+      maxSteps: 5,
+    })
 
-  return result.toDataStreamResponse()
+    return result.toDataStreamResponse()
+  } catch (error) {
+    console.error('Agent 错误:', error)
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 }
 ```
 
-`app/simple-agent/page.tsx`：
+`src/app/simple-agent/page.tsx`：
 
 ```tsx
 'use client'
@@ -235,7 +244,7 @@ export default function SimpleAgentPage() {
   })
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">🤖 简单 Agent</h1>
       <p className="text-gray-500 mb-4">
         技术问答 Agent，可自动搜索知识库回答问题。试试"什么是 React？"
@@ -296,11 +305,11 @@ export default function SimpleAgentPage() {
 
 Agent 配备搜索和计算两个工具，可以协同工作解决复杂问题。
 
-`app/api/multi-tool-agent/route.ts`：
+`src/app/api/multi-tool-agent/route.ts`：
 
 ```typescript
 import { streamText, tool } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const searchTool = tool({
@@ -322,6 +331,60 @@ const searchTool = tool({
   },
 })
 
+// 安全的数学表达式解析器（仅支持 + - * / 和括号）
+function safeEvaluate(expr: string): number {
+  const tokens = expr.match(/\d+\.?\d*|[-+*/()]|\s+/g)
+  if (!tokens) throw new Error('无效的表达式')
+
+  // 使用 Function 构造函数的替代方案：分步解析二元运算
+  // 先处理括号，再处理乘除，最后处理加减
+  let sanitized = expr.replace(/\s+/g, '')
+
+  // 验证只允许数字和运算符
+  if (!/^[\d+\-*/.()]+$/.test(sanitized)) {
+    throw new Error('表达式包含非法字符')
+  }
+
+  // 递归解析括号
+  while (sanitized.includes('(')) {
+    const match = sanitized.match(/\(([^()]+)\)/)
+    if (!match) throw new Error('括号不匹配')
+    const value = evaluateSimple(match[1])
+    sanitized = sanitized.replace(match[0], String(value))
+  }
+
+  return evaluateSimple(sanitized)
+}
+
+function evaluateSimple(expr: string): number {
+  // 处理乘除
+  let temp = expr
+  while (/[*/]/.test(temp)) {
+    const match = temp.match(/([\d.]+)([*/])([\d.]+)/)
+    if (!match) break
+    const [, left, op, right] = match
+    const value = op === '*' ? Number(left) * Number(right) : Number(left) / Number(right)
+    temp = temp.replace(match[0], String(value))
+  }
+  // 处理加减
+  let result = 0
+  let sign = 1
+  let num = ''
+  for (let i = 0; i <= temp.length; i++) {
+    const char = temp[i] || '+'
+    if (/[\d.]/.test(char)) {
+      num += char
+    } else if (/[+-]/.test(char)) {
+      result += sign * (num ? Number(num) : 0)
+      sign = char === '+' ? 1 : -1
+      num = ''
+    } else if (char) {
+      throw new Error('无效的运算符')
+    }
+  }
+  return result
+}
+
 const calculatorTool = tool({
   description: '执行数学计算，支持加减乘除、百分比等运算',
   parameters: z.object({
@@ -333,8 +396,8 @@ const calculatorTool = tool({
       return { error: '表达式包含非法字符' }
     }
     try {
-      // 使用 Function 构造函数有安全风险，此处仅做演示
-      const result = new Function(`"use strict"; return (${sanitized})`)()
+      // 安全解析：仅支持数字、运算符、括号和点号
+      const result = safeEvaluate(sanitized)
       return { expression, result: Number(result.toFixed(2)) }
     } catch {
       return { error: `表达式 "${expression}" 无效，请检查格式` }
@@ -343,29 +406,37 @@ const calculatorTool = tool({
 })
 
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  try {
+    const { messages } = await req.json()
 
-  const result = streamText({
-    model: openai('gpt-4o'),
-    messages: [
-      {
-        role: 'system',
-        content: '你是一个多工具 Agent。你可以搜索知识库获取信息，也可以用计算器处理数学运算。面对复杂问题时，先搜索获取必要数据，再用计算器得出结果。',
+    const result = streamText({
+      model: getModel(provider),
+      messages: [
+        {
+          role: 'system',
+          content: '你是一个多工具 Agent。你可以搜索知识库获取信息，也可以用计算器处理数学运算。面对复杂问题时，先搜索获取必要数据，再用计算器得出结果。',
+        },
+        ...messages,
+      ],
+      tools: {
+        search: searchTool,
+        calculate: calculatorTool,
       },
-      ...messages,
-    ],
-    tools: {
-      search: searchTool,
-      calculate: calculatorTool,
-    },
-    maxSteps: 8,
-  })
+      maxSteps: 8,
+    })
 
-  return result.toDataStreamResponse()
+    return result.toDataStreamResponse()
+  } catch (error) {
+    console.error('Agent 错误:', error)
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 }
 ```
 
-`app/multi-tool-agent/page.tsx`：
+`src/app/multi-tool-agent/page.tsx`：
 
 ```tsx
 'use client'
@@ -378,7 +449,7 @@ export default function MultiToolAgentPage() {
   })
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">🛠 多工具 Agent</h1>
       <p className="text-gray-500 mb-4">
         可搜索 + 计算的 Agent。试试"GPT-4 的上下文多大？如果每轮对话消耗 2000 Token，128K 能支持多少轮？"
@@ -432,11 +503,11 @@ export default function MultiToolAgentPage() {
 
 Agent 能够在多次对话中记住用户偏好和上下文。
 
-`app/api/agent-with-memory/route.ts`：
+`src/app/api/agent-with-memory/route.ts`：
 
 ```typescript
 import { streamText, tool } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 // 模拟持久化存储
@@ -481,37 +552,45 @@ const recallTool = tool({
 })
 
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  try {
+    const { messages } = await req.json()
 
-  // 从最后一条 user 消息中提取用户标识
-  const memory = getUserMemory('default-user')
+    // 从最后一条 user 消息中提取用户标识
+    const memory = getUserMemory('default-user')
 
-  const result = streamText({
-    model: openai('gpt-4o'),
-    messages: [
-      {
-        role: 'system',
-        content: `你是一个带记忆功能的 AI 助手。你有两个工具：
+    const result = streamText({
+      model: getModel(provider),
+      messages: [
+        {
+          role: 'system',
+          content: `你是一个带记忆功能的 AI 助手。你有两个工具：
 1. remember：当用户告诉你个人信息或偏好时，用这个工具保存
 2. recall：当你需要回忆用户信息时，用这个工具查询
 
 当前已知用户信息：${JSON.stringify(memory.preferences)}
 永远不要在回答中直接暴露你正在使用记忆工具。自然地和用户交流即可。`,
+        },
+        ...messages,
+      ],
+      tools: {
+        remember: memoryTool,
+        recall: recallTool,
       },
-      ...messages,
-    ],
-    tools: {
-      remember: memoryTool,
-      recall: recallTool,
-    },
-    maxSteps: 5,
-  })
+      maxSteps: 5,
+    })
 
-  return result.toDataStreamResponse()
+    return result.toDataStreamResponse()
+  } catch (error) {
+    console.error('Agent 错误:', error)
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 }
 ```
 
-`app/agent-with-memory/page.tsx`：
+`src/app/agent-with-memory/page.tsx`：
 
 ```tsx
 'use client'
@@ -524,7 +603,7 @@ export default function AgentWithMemoryPage() {
   })
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">🧠 Agent 带记忆</h1>
       <p className="text-gray-500 mb-4">
         能记住你的偏好和信息的智能助手。试试"我喜欢喝拿铁"、"我住在北京"，然后问"你还记得我的信息吗？"
@@ -585,11 +664,11 @@ export default function AgentWithMemoryPage() {
 
 Agent 在执行复杂任务时，可能部分失败。本示例展示如何实现降级策略——当主要工具失败时，自动使用备选方案。
 
-`app/api/agent-with-fallback/route.ts`：
+`src/app/api/agent-with-fallback/route.ts`：
 
 ```typescript
 import { streamText, tool } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const flightSearchTool = tool({
@@ -659,34 +738,42 @@ const weatherCheckTool = tool({
 })
 
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  try {
+    const { messages } = await req.json()
 
-  const result = streamText({
-    model: openai('gpt-4o'),
-    messages: [
-      {
-        role: 'system',
-        content: `你是一个智能出行助手。你的工作原则：
+    const result = streamText({
+      model: getModel(provider),
+      messages: [
+        {
+          role: 'system',
+          content: `你是一个智能出行助手。你的工作原则：
 1. 优先查询航班信息
 2. 如果航班查询返回错误且有 fallbackAvailable 标记，自动推荐高铁作为备选
 3. 查询目的地天气，综合给出建议
 4. 输出最终建议时，清晰地告诉用户可用的选项和你的推荐`,
+        },
+        ...messages,
+      ],
+      tools: {
+        search_flights: flightSearchTool,
+        search_trains: trainSearchTool,
+        check_weather: weatherCheckTool,
       },
-      ...messages,
-    ],
-    tools: {
-      search_flights: flightSearchTool,
-      search_trains: trainSearchTool,
-      check_weather: weatherCheckTool,
-    },
-    maxSteps: 10,
-  })
+      maxSteps: 10,
+    })
 
-  return result.toDataStreamResponse()
+    return result.toDataStreamResponse()
+  } catch (error) {
+    console.error('Agent 错误:', error)
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 }
 ```
 
-`app/agent-with-fallback/page.tsx`：
+`src/app/agent-with-fallback/page.tsx`：
 
 ```tsx
 'use client'
@@ -699,7 +786,7 @@ export default function AgentWithFallbackPage() {
   })
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">🚀 智能出行 Agent</h1>
       <p className="text-gray-500 mb-4">
         航班查不到？自动推荐高铁。试试"6月1日（周六）从北京到上海的交通"或"6月2日（周一）从北京到广州"
@@ -804,7 +891,7 @@ curl -X POST http://localhost:3000/api/agent-with-fallback \
 
 ```typescript
 const result = streamText({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   messages,
   tools: { ... },
   maxSteps: 15,

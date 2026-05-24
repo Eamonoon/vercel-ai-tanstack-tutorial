@@ -18,11 +18,11 @@
 
 ```typescript
 import { generateObject } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const { object } = await generateObject({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   schema: z.object({
     name: z.string(),
     age: z.number(),
@@ -40,7 +40,7 @@ const { object } = await generateObject({
 | `schema` | Zod Schema | 定义输出结构的 Schema |
 | `prompt` | string | 用户提示词 |
 | `system` | string | 系统提示词（可选） |
-| `mode` | 'auto' \| 'json' \| 'tool' | 输出模式（可选） |
+| `mode` | 'auto' \| 'json' \| 'tool' | 输出模式（可选）。`'json'` 为 OpenAI 专有，Anthropic 不支持 |
 
 ### 返回值
 
@@ -60,7 +60,7 @@ const {
 
 ```typescript
 const { object } = await generateObject({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   schema: mySchema,
   prompt: '...',
   mode: 'json', // 强制 JSON 模式
@@ -73,7 +73,7 @@ const { object } = await generateObject({
 
 ```typescript
 const { text } = await generateText({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   prompt: `分析情感，返回 JSON: {"sentiment": "positive|negative|neutral", "score": 0-10}`,
 })
 
@@ -95,7 +95,7 @@ try {
 
 ```typescript
 const { object } = await generateObject({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   schema: z.object({
     sentiment: z.enum(['positive', 'negative', 'neutral']),
     score: z.number().min(0).max(10),
@@ -123,11 +123,11 @@ const { object } = await generateObject({
 
 本示例对用户输入的文本进行情感分析，返回情感类别、评分和关键词。
 
-`app/api/sentiment/route.ts`：
+`src/app/api/sentiment/route.ts`：
 
 ```typescript
 import { generateObject } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const sentimentSchema = z.object({
@@ -139,15 +139,15 @@ const sentimentSchema = z.object({
 })
 
 export async function POST(req: Request) {
-  const { text } = await req.json()
-
-  if (!text || typeof text !== 'string') {
-    return Response.json({ error: '请提供要分析的文本' }, { status: 400 })
-  }
-
   try {
+    const { text } = await req.json()
+
+    if (!text || typeof text !== 'string') {
+      return Response.json({ error: '请提供要分析的文本' }, { status: 400 })
+    }
+
     const { object, usage } = await generateObject({
-      model: openai('gpt-4o'),
+      model: getModel(provider),
       schema: sentimentSchema,
       prompt: `请分析以下文本的情感：\n\n${text}`,
       system: '你是一个情感分析专家。请客观分析文本的情感倾向。',
@@ -162,12 +162,15 @@ export async function POST(req: Request) {
       },
     })
   } catch (error) {
-    return Response.json({ error: '情感分析失败，请稍后重试' }, { status: 500 })
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
   }
 }
 ```
 
-`app/sentiment/page.tsx`：
+`src/app/sentiment/page.tsx`：
 
 ```tsx
 'use client'
@@ -295,19 +298,19 @@ export default function SentimentPage() {
 
 从非结构化文本中提取结构化数据——适用于简历解析、发票识别、新闻摘要等场景。
 
-`app/api/extract/route.ts`：
+`src/app/api/extract/route.ts`：
 
 ```typescript
 import { generateObject } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const personSchema = z.object({
   name: z.string().describe('姓名'),
   age: z.number().int().positive().describe('年龄'),
   occupation: z.string().describe('职业'),
-  email: z.string().email().optional().describe('电子邮箱'),
-  phone: z.string().optional().describe('电话号码'),
+  email: z.string().email().nullable().describe('电子邮箱'),
+  phone: z.string().nullable().describe('电话号码'),
   skills: z.array(z.string()).describe('技能列表'),
   workExperience: z.array(z.object({
     company: z.string(),
@@ -322,24 +325,31 @@ const personSchema = z.object({
 })
 
 export async function POST(req: Request) {
-  const { text } = await req.json()
+  try {
+    const { text } = await req.json()
 
-  if (!text || typeof text !== 'string') {
-    return Response.json({ error: '请提供要提取信息的文本' }, { status: 400 })
+    if (!text || typeof text !== 'string') {
+      return Response.json({ error: '请提供要提取信息的文本' }, { status: 400 })
+    }
+
+    const { object } = await generateObject({
+      model: getModel(provider),
+      schema: personSchema,
+      prompt: `从以下文本中提取个人信息：\n\n${text}`,
+      system: '你是一个信息提取助手。从文本中提取结构化信息，如果某个字段没有找到，使用 null 或空数组。',
+    })
+
+    return Response.json({ data: object })
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
   }
-
-  const { object } = await generateObject({
-    model: openai('gpt-4o'),
-    schema: personSchema,
-    prompt: `从以下文本中提取个人信息：\n\n${text}`,
-    system: '你是一个信息提取助手。从文本中提取结构化信息，如果某个字段没有找到，使用 null 或空数组。',
-  })
-
-  return Response.json({ data: object })
 }
 ```
 
-`app/extract/page.tsx`：
+`src/app/extract/page.tsx`：
 
 ```tsx
 'use client'
@@ -350,8 +360,8 @@ type ExtractedPerson = {
   name: string
   age: number
   occupation: string
-  email?: string
-  phone?: string
+  email: string | null
+  phone: string | null
   skills: string[]
   workExperience: { company: string; position: string; years: number }[]
   education: { degree: string; school: string; graduationYear: number }
@@ -389,7 +399,7 @@ export default function ExtractPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">📋 信息提取</h1>
       <p className="text-gray-500 mb-4">从非结构化文本中提取结构化个人信息</p>
 
@@ -465,11 +475,11 @@ export default function ExtractPage() {
 
 同时处理多条数据并返回结果数组。适合批量审核、批量分类等场景。
 
-`app/api/batch-classify/route.ts`：
+`src/app/api/batch-classify/route.ts`：
 
 ```typescript
 import { generateObject } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const reviewSchema = z.object({
@@ -485,24 +495,31 @@ const reviewSchema = z.object({
 })
 
 export async function POST(req: Request) {
-  const { items } = await req.json()
+  try {
+    const { items } = await req.json()
 
-  if (!Array.isArray(items) || items.length === 0) {
-    return Response.json({ error: '请提供需要分类的项目列表' }, { status: 400 })
+    if (!Array.isArray(items) || items.length === 0) {
+      return Response.json({ error: '请提供需要分类的项目列表' }, { status: 400 })
+    }
+
+    const { object } = await generateObject({
+      model: getModel(provider),
+      schema: reviewSchema,
+      prompt: `请对以下用户评价进行分类和分析：\n\n${JSON.stringify(items, null, 2)}`,
+      system: '你是一个评价分析助手。对每条评价进行分类、评分和分析。',
+    })
+
+    return Response.json({ data: object.reviews })
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
   }
-
-  const { object } = await generateObject({
-    model: openai('gpt-4o'),
-    schema: reviewSchema,
-    prompt: `请对以下用户评价进行分类和分析：\n\n${JSON.stringify(items, null, 2)}`,
-    system: '你是一个评价分析助手。对每条评价进行分类、评分和分析。',
-  })
-
-  return Response.json({ data: object.reviews })
 }
 ```
 
-`app/batch-classify/page.tsx`：
+`src/app/batch-classify/page.tsx`：
 
 ```tsx
 'use client'
@@ -604,11 +621,11 @@ export default function BatchClassifyPage() {
 
 复杂的业务场景需要嵌套的数据结构。本示例展示如何用嵌套 Zod Schema 定义多层次输出。
 
-`app/api/nested-schema/route.ts`：
+`src/app/api/nested-schema/route.ts`：
 
 ```typescript
 import { generateObject } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 import { z } from 'zod'
 
 const analysisSchema = z.object({
@@ -648,18 +665,25 @@ const sampleData = [
 ]
 
 export async function POST(req: Request) {
-  const { object } = await generateObject({
-    model: openai('gpt-4o'),
-    schema: analysisSchema,
-    prompt: `分析以下产品销售数据并提供建议：\n\n${JSON.stringify(sampleData, null, 2)}`,
-    system: '你是一个销售数据分析师。基于产品销售数据生成分析报告和建议。',
-  })
+  try {
+    const { object } = await generateObject({
+      model: getModel(provider),
+      schema: analysisSchema,
+      prompt: `分析以下产品销售数据并提供建议：\n\n${JSON.stringify(sampleData, null, 2)}`,
+      system: '你是一个销售数据分析师。基于产品销售数据生成分析报告和建议。',
+    })
 
-  return Response.json({ data: object })
+    return Response.json({ data: object })
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
 }
 ```
 
-`app/nested-schema/page.tsx`：
+`src/app/nested-schema/page.tsx`：
 
 ```tsx
 'use client'
@@ -841,7 +865,7 @@ curl -X POST http://localhost:3000/api/nested-schema \
 import { streamObject } from 'ai'
 
 const { partialObjectStream } = streamObject({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   schema: mySchema,
   prompt: '...',
 })
@@ -887,7 +911,7 @@ z.object({
 
 ```typescript
 const { object } = await generateObject({
-  model: openai('gpt-4o'),
+  model: getModel(provider),
   schema: mySchema,
   prompt: '...',
   temperature: 0.1, // 低温度 = 更确定性的输出

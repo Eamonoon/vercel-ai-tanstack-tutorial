@@ -17,13 +17,21 @@ Embedding 解决了这些问题：将文档转化为向量，存入向量数据�
 
 ## 7.2 `embed` vs `embedMany` API
 
+> **Provider 兼容性说明**
+>
+> Anthropic 目前**不提供 Embedding API**。若需使用其他提供商的 Embedding 模型，可选用：
+> - **Cohere**: `cohere.embed(...)` — `embed-english-v3` / `embed-multilingual-v3`
+> - **Google AI**: `google.textEmbedding(...)` — `text-embedding-004`
+>
+> 本章示例以 OpenAI 的 `text-embedding-3-small` 为主，API 用法与其他提供商一致。
+
 ### `embed` — 单条文本嵌入
 
 将一条文本转化为向量。
 
 ```typescript
 import { embed } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 
 const { embedding } = await embed({
   model: openai.embedding('text-embedding-3-small'),
@@ -41,7 +49,7 @@ console.log(embedding.length) // 维度，如 1536
 ```typescript
 import { embedMany } from 'ai'
 
-const { embeddings, embeddings: docVectors } = await embedMany({
+const { embeddings } = await embedMany({
   model: openai.embedding('text-embedding-3-small'),
   values: [
     '第一条文档',
@@ -50,7 +58,7 @@ const { embeddings, embeddings: docVectors } = await embedMany({
   ],
 })
 
-console.log(docVectors) // number[][]，每条文本对应一个向量
+console.log(embeddings) // number[][]，每条文本对应一个向量
 console.log(embeddings.length) // 3
 ```
 
@@ -166,11 +174,11 @@ const similarity = normalizedA.reduce((sum, v, i) => sum + v * normalizedB[i], 0
 
 展示 Embedding 的基础用法和向量属性。
 
-`app/api/embed-basics/route.ts`：
+`src/app/api/embed-basics/route.ts`：
 
 ```typescript
 import { embed, embedMany } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) return 0
@@ -185,46 +193,53 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 export async function POST(req: Request) {
-  const { text } = await req.json()
+  try {
+    const { text } = await req.json()
 
-  if (!text) {
-    return Response.json({ error: '请提供文本' }, { status: 400 })
+    if (!text) {
+      return Response.json({ error: '请提供文本' }, { status: 400 })
+    }
+
+    const { embedding } = await embed({
+      model: openai.embedding('text-embedding-3-small'),
+      value: text,
+    })
+
+    const compareTexts = [
+      text,
+      '完全无关的话题：做饭的食谱',
+      text.slice(0, 10) + '...（略作修改）',
+    ]
+
+    const { embeddings } = await embedMany({
+      model: openai.embedding('text-embedding-3-small'),
+      values: compareTexts,
+    })
+
+    const similarities = embeddings.map((vec, i) => ({
+      text: compareTexts[i],
+      similarity: cosineSimilarity(embedding, vec),
+    }))
+
+    return Response.json({
+      vectorDimensions: embedding.length,
+      vectorPreview: embedding.slice(0, 5),
+      selfSimilarity: similarities[0].similarity.toFixed(4),
+      comparisons: similarities.slice(1).map((s) => ({
+        text: s.text,
+        similarity: s.similarity.toFixed(4),
+      })),
+    })
+  } catch {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
   }
-
-  const { embedding } = await embed({
-    model: openai.embedding('text-embedding-3-small'),
-    value: text,
-  })
-
-  const compareTexts = [
-    text,
-    '完全无关的话题：做饭的食谱',
-    text.slice(0, 10) + '...（略作修改）',
-  ]
-
-  const { embeddings } = await embedMany({
-    model: openai.embedding('text-embedding-3-small'),
-    values: compareTexts,
-  })
-
-  const similarities = embeddings.map((vec, i) => ({
-    text: compareTexts[i],
-    similarity: cosineSimilarity(embedding, vec),
-  }))
-
-  return Response.json({
-    vectorDimensions: embedding.length,
-    vectorPreview: embedding.slice(0, 5),
-    selfSimilarity: similarities[0].similarity.toFixed(4),
-    comparisons: similarities.slice(1).map((s) => ({
-      text: s.text,
-      similarity: s.similarity.toFixed(4),
-    })),
-  })
 }
 ```
 
-`app/embed-basics/page.tsx`：
+`src/app/embed-basics/page.tsx`：
 
 ```tsx
 'use client'
@@ -317,11 +332,11 @@ export default function EmbedBasicsPage() {
 
 这是最核心的 Embedding 应用场景：构建一个完整的中文文档语义搜索引擎。
 
-`app/api/semantic-search/route.ts`：
+`src/app/api/semantic-search/route.ts`：
 
 ```typescript
 import { embed, embedMany } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 
 const documentStore = [
   { id: 1, title: 'Vercel AI SDK 介绍', content: 'Vercel AI SDK 是一个开源的 TypeScript 库，提供统一的 AI 接口层，支持 OpenAI、Anthropic、Google 等多种模型提供商。开发者可以用同一套 API 操作不同的底层模型。' },
@@ -352,15 +367,13 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return mag === 0 ? 0 : dot / mag
 }
 
-const model = openai.embedding('text-embedding-3-small')
-
 let indexedEmbeddings: number[][] | null = null
 
 async function getIndexedEmbeddings(): Promise<number[][]> {
   if (indexedEmbeddings) return indexedEmbeddings
 
   const { embeddings } = await embedMany({
-    model,
+    model: openai.embedding('text-embedding-3-small'),
     values: documentStore.map((d) => d.content),
   })
 
@@ -369,39 +382,46 @@ async function getIndexedEmbeddings(): Promise<number[][]> {
 }
 
 export async function POST(req: Request) {
-  const { query, topK = 3, threshold = 0.3 } = await req.json()
+  try {
+    const { query, topK = 3, threshold = 0.3 } = await req.json()
 
-  if (!query) {
-    return Response.json({ error: '请输入搜索关键词' }, { status: 400 })
+    if (!query) {
+      return Response.json({ error: '请输入搜索关键词' }, { status: 400 })
+    }
+
+    const { embedding: queryEmbedding } = await embed({
+      model: openai.embedding('text-embedding-3-small'),
+      value: query,
+    })
+
+    const docEmbeddings = await getIndexedEmbeddings()
+
+    const results: SearchResult[] = docEmbeddings
+      .map((docEmb, i) => ({
+        id: documentStore[i].id,
+        title: documentStore[i].title,
+        content: documentStore[i].content,
+        similarity: cosineSimilarity(queryEmbedding, docEmb),
+      }))
+      .filter((r) => r.similarity >= threshold)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, topK)
+
+    return Response.json({
+      query,
+      totalDocuments: documentStore.length,
+      results,
+    })
+  } catch {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
   }
-
-  const { embedding: queryEmbedding } = await embed({
-    model,
-    value: query,
-  })
-
-  const docEmbeddings = await getIndexedEmbeddings()
-
-  const results: SearchResult[] = docEmbeddings
-    .map((docEmb, i) => ({
-      id: documentStore[i].id,
-      title: documentStore[i].title,
-      content: documentStore[i].content,
-      similarity: cosineSimilarity(queryEmbedding, docEmb),
-    }))
-    .filter((r) => r.similarity >= threshold)
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, topK)
-
-  return Response.json({
-    query,
-    totalDocuments: documentStore.length,
-    results,
-  })
 }
 ```
 
-`app/semantic-search/page.tsx`：
+`src/app/semantic-search/page.tsx`：
 
 ```tsx
 'use client'
@@ -453,7 +473,7 @@ export default function SemanticSearchPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">🔍 语义搜索</h1>
       <p className="text-gray-500 mb-4">
         基于 Embedding 的中文文档语义搜索引擎。搜索"AI 模型"或"前端组件"试试。
@@ -532,12 +552,14 @@ export default function SemanticSearchPage() {
 
 重复 Embedding 相同的文本既浪费 Token 也浪费时间。本示例展示一个内存缓存方案。
 
-`app/api/embed-with-cache/route.ts`：
+> ⚠️ **Runtime 限制**：本示例使用 Node.js 的 `crypto.createHash`，**仅支持 Node.js Runtime**。若你的路由配置为 Edge Runtime，请将 `import { createHash } from 'crypto'` 替换为 Web Crypto API 的 `crypto.subtle.digest('SHA-256', ...)`。
+
+`src/app/api/embed-with-cache/route.ts`：
 
 ```typescript
 import { embed } from 'ai'
-import { openai } from '@ai-sdk/openai'
-import { createHash } from 'crypto'
+import { getModel } from '@/lib/ai'
+import { createHash } from 'crypto' // 仅 Node.js Runtime，Edge Runtime 请使用 crypto.subtle.digest
 
 interface CacheEntry {
   text: string
@@ -592,42 +614,48 @@ class EmbeddingCache {
 }
 
 const cache = new EmbeddingCache()
-const model = openai.embedding('text-embedding-3-small')
 
 export async function POST(req: Request) {
-  const { text } = await req.json()
+  try {
+    const { text } = await req.json()
 
-  if (!text) {
-    return Response.json({ error: '请提供文本' }, { status: 400 })
-  }
+    if (!text) {
+      return Response.json({ error: '请提供文本' }, { status: 400 })
+    }
 
-  const cached = cache.get(text)
-  if (cached) {
+    const cached = cache.get(text)
+    if (cached) {
+      return Response.json({
+        source: 'cache',
+        embedding: cached,
+        vectorDimensions: cached.length,
+        cacheStats: cache.stats,
+      })
+    }
+
+    const { embedding } = await embed({
+      model: openai.embedding('text-embedding-3-small'),
+      value: text,
+    })
+
+    cache.set(text, embedding)
+
     return Response.json({
-      source: 'cache',
-      embedding: cached,
-      vectorDimensions: cached.length,
+      source: 'api',
+      embedding,
+      vectorDimensions: embedding.length,
       cacheStats: cache.stats,
     })
+  } catch {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
   }
-
-  const { embedding } = await embed({
-    model,
-    value: text,
-  })
-
-  cache.set(text, embedding)
-
-  return Response.json({
-    source: 'api',
-    embedding,
-    vectorDimensions: embedding.length,
-    cacheStats: cache.stats,
-  })
 }
 ```
 
-`app/embed-with-cache/page.tsx`：
+`src/app/embed-with-cache/page.tsx`：
 
 ```tsx
 'use client'
@@ -716,11 +744,11 @@ export default function EmbedWithCachePage() {
 
 在实际应用中，不是所有搜索结果都需要展示。通过设定阈值过滤低质量匹配，提升用户体验。
 
-`app/api/threshold-search/route.ts`：
+`src/app/api/threshold-search/route.ts`：
 
 ```typescript
 import { embed, embedMany } from 'ai'
-import { openai } from '@ai-sdk/openai'
+import { getModel } from '@/lib/ai'
 
 const products = [
   { id: 'P001', name: 'MacBook Pro 14英寸', category: '笔记本', price: 14999, description: 'Apple M4 Pro 芯片，24GB 内存，512GB 存储，Liquid Retina XDR 显示屏。适合专业视频剪辑、编程和设计工作。' },
@@ -742,48 +770,55 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return mag === 0 ? 0 : dot / mag
 }
 
-const model = openai.embedding('text-embedding-3-small')
-
 export async function POST(req: Request) {
-  const { query, threshold = 0.4, topK = 5 } = await req.json()
+  try {
+    const { query, threshold = 0.4, topK = 5 } = await req.json()
 
-  if (!query) {
-    return Response.json({ error: '请输入搜索关键词' }, { status: 400 })
+    if (!query) {
+      return Response.json({ error: '请输入搜索关键词' }, { status: 400 })
+    }
+
+    const model = openai.embedding('text-embedding-3-small')
+
+    const { embedding: queryEmb } = await embed({ model, value: query })
+
+    const { embeddings } = await embedMany({
+      model,
+      values: products.map((p) => `${p.name} ${p.category} ${p.description}`),
+    })
+
+    const results = products
+      .map((p, i) => ({
+        ...p,
+        similarity: cosineSimilarity(queryEmb, embeddings[i]),
+      }))
+      .filter((r) => r.similarity >= threshold)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, topK)
+
+    return Response.json({
+      query,
+      threshold,
+      totalProducts: products.length,
+      matchedCount: results.length,
+      results: results.map((r) => ({
+        name: r.name,
+        category: r.category,
+        price: r.price,
+        description: r.description,
+        matchScore: Number((r.similarity * 100).toFixed(1)),
+      })),
+    })
+  } catch {
+    return new Response(
+      JSON.stringify({ error: '处理请求时发生错误，请稍后重试' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
   }
-
-  const { embedding: queryEmb } = await embed({ model, value: query })
-
-  const { embeddings } = await embedMany({
-    model,
-    values: products.map((p) => `${p.name} ${p.category} ${p.description}`),
-  })
-
-  const results = products
-    .map((p, i) => ({
-      ...p,
-      similarity: cosineSimilarity(queryEmb, embeddings[i]),
-    }))
-    .filter((r) => r.similarity >= threshold)
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, topK)
-
-  return Response.json({
-    query,
-    threshold,
-    totalProducts: products.length,
-    matchedCount: results.length,
-    results: results.map((r) => ({
-      name: r.name,
-      category: r.category,
-      price: r.price,
-      description: r.description,
-      matchScore: Number((r.similarity * 100).toFixed(1)),
-    })),
-  })
 }
 ```
 
-`app/threshold-search/page.tsx`：
+`src/app/threshold-search/page.tsx`：
 
 ```tsx
 'use client'
@@ -833,7 +868,7 @@ export default function ThresholdSearchPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-2">🎯 阈值过滤搜索</h1>
       <p className="text-gray-500 mb-4">通过调整相似度阈值控制搜索结果的质量</p>
 
