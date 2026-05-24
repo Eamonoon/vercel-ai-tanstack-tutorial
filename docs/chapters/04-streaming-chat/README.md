@@ -76,11 +76,19 @@ for await (const chunk of result.textStream) {
 // 4. 获取完整文本
 const fullText: string = await result.text;
 
-// 5. 完成回调
-result.onFinish({ text, finishReason, usage, response });
+// 5. 完成回调 — 作为 streamText() 的参数传入，非 result 对象上的方法
+// streamText({
+//   model,
+//   messages,
+//   onFinish: ({ text, finishReason, usage }) => { ... },
+// });
 
-// 6. 错误回调
-result.onError({ error });
+// 6. 错误回调 — 同样作为 streamText() 的参数传入
+// streamText({
+//   model,
+//   messages,
+//   onError: ({ error }) => { ... },
+// });
 ```
 
 ### 参数说明
@@ -169,10 +177,12 @@ export default function ChatPage() {
 ### 状态组件
 
 ```typescript
+// 此组件用于展示 4.4 节中的四种状态管理（idle / loading / aborted / error）
+// 示例2（基础聊天）、示例3（Provider 切换）、示例4（中止与重试）均为本组件的简化/定制版本
 "use client";
 
 import { useChat } from "ai/react";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 
 type Status = "idle" | "loading" | "aborted";
 
@@ -264,7 +274,7 @@ export default function ChatUI() {
 `src/app/api/chat/route.ts`：
 
 ```typescript
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { streamText } from "ai";
 import { getModel } from "@/lib/ai";
 
@@ -288,10 +298,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Stream Error:", error);
-    return new Response(JSON.stringify({ error: "Stream generation failed" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return NextResponse.json(
+      { error: "Stream generation failed" },
+      { status: 500 }
+    );
   }
 }
 ```
